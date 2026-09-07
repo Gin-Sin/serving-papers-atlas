@@ -1,12 +1,13 @@
-import { ArrowRight, BookOpen, Network, Orbit, Route, Waves } from 'lucide-react';
+import { ArrowRight, BookOpen, Cpu, Database, Network, Orbit, Waves } from 'lucide-react';
 import { SiteHeader } from '@/components/site-header';
 import { StaticPageLink } from '@/components/static-page-link';
 import { articles, stages } from '@/lib/articles';
 
 const mapColumns = [
-  { label: '输入约束', icon: Orbit, items: ['模型架构', 'Context / KV', '硬件互联', 'TTFT / TPOT'] },
-  { label: '并行决策', icon: Network, items: ['TP · PP', 'DP Attention', 'Wide-EP', 'DCP'] },
-  { label: '系统组合', icon: Route, items: ['P/D 分离', 'KV / State Transfer', 'Overlap · MTP', 'EPLB · Elasticity'] },
+  { label: '输入约束', icon: Orbit, items: ['模型架构', '流量形态', '硬件互联', 'TTFT / TPOT'] },
+  { label: '运行时调度', icon: Cpu, items: ['Continuous Batch', 'Token Budget', 'Chunked Prefill', 'Spec Decode'] },
+  { label: '状态管理', icon: Database, items: ['Paged KV', 'Radix Cache', 'Hierarchical KV', 'Distributed KV'] },
+  { label: '并行拓扑', icon: Network, items: ['TP · PP', 'DP Attention', 'Wide-EP', 'P/D · DCP'] },
   { label: '生产结果', icon: Waves, items: ['Goodput', 'Tail Latency', 'Capacity', 'Failure Radius'] },
 ];
 
@@ -20,7 +21,7 @@ export default function Home() {
         <div className="hero-copy">
           <p className="eyebrow"><span />LMSYS × vLLM · CURATED FIELD NOTES</p>
           <h1>从模型结构，<br />推导 <em>Serving 拓扑。</em></h1>
-          <p className="hero-lede">{articles.length} 篇前沿推理系统文章的章节化导读。沿着混合并行、P/D 分离与模型状态三条线，读懂每一个架构选择背后的瓶颈。</p>
+          <p className="hero-lede">{articles.length} 篇前沿推理系统文章的章节化导读。沿着并行拓扑、调度执行与 KV 状态三条线，读懂每一个架构选择背后的瓶颈。</p>
           <div className="hero-actions">
             <a className="primary-action" href="#roadmap">开始阅读 <ArrowRight /></a>
             <a href="#map">先看知识地图</a>
@@ -28,24 +29,24 @@ export default function Home() {
         </div>
         <aside className="field-card">
           <span>READING FIELD</span>
-          <dl><div><dt>{articles.length}</dt><dd>核心文章</dd></div><div><dt>04</dt><dd>学习阶段</dd></div><div><dt>{questionCount}</dt><dd>深度问题</dd></div></dl>
-          <p>重点覆盖 DeepSeek、Kimi K3、Qwen3.5、GLM-5.2，以及 vLLM / SGLang 的真实部署拓扑。</p>
+          <dl><div><dt>{articles.length}</dt><dd>核心文章</dd></div><div><dt>{String(stages.length).padStart(2, '0')}</dt><dd>学习阶段</dd></div><div><dt>{questionCount}</dt><dd>深度问题</dd></div></dl>
+          <p>从 DeepSeek、Kimi K3 等前沿模型拓扑，延伸到 vLLM / SGLang 的 scheduler、KV cache 与 kernel 内核。</p>
         </aside>
       </section>
 
       <section className="map-section" id="map">
-        <div className="section-heading"><span>01 / KNOWLEDGE MAP</span><h2>一张图看清<br />Serving 决策链</h2><p>不要从框架 flag 出发。先定位不可切分的状态与关键链路，再决定并行轴。</p></div>
+        <div className="section-heading"><span>01 / KNOWLEDGE MAP</span><h2>五层看清<br />Serving 决策链</h2><p>从 workload 进入调度与状态层，再决定并行拓扑，最终用线上 SLO 收束。</p></div>
         <div className="knowledge-map">
           {mapColumns.map((column, index) => {
             const Icon = column.icon;
             return <article key={column.label}><div className="map-index">0{index + 1}</div><Icon aria-hidden="true" /><h3>{column.label}</h3><ul>{column.items.map((item) => <li key={item}>{item}</li>)}</ul>{index < mapColumns.length - 1 ? <ArrowRight className="map-arrow" aria-hidden="true" /> : null}</article>;
           })}
         </div>
-        <p className="map-caption">MODEL STATE <i /> COMMUNICATION <i /> SCHEDULING <i /> SLO</p>
+        <p className="map-caption">WORKLOAD <i /> SCHEDULING <i /> STATE <i /> TOPOLOGY <i /> SLO</p>
       </section>
 
       <section className="roadmap-section" id="roadmap">
-        <div className="section-heading"><span>02 / READING ROADMAP</span><h2>四个阶段，<br />逐步加上复杂度</h2><p>每章保留原文结构、加入推导注解，并以开放题检查是否真正理解。</p></div>
+        <div className="section-heading"><span>02 / READING ROADMAP</span><h2>五个阶段，<br />逐步加上复杂度</h2><p>每章保留原文结构、加入推导注解，并以开放题检查是否真正理解。</p></div>
         <div className="stage-list">
           {stages.map((stage) => {
             const stageArticles = orderedArticles.filter((article) => article.stageNo === stage.no);

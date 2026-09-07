@@ -14,7 +14,7 @@ export function SiteHeader({ article = false }: { article?: boolean }) {
         <StaticPageLink href="/serving-papers-atlas/#roadmap">阅读路线</StaticPageLink>
         {article ? <StaticPageLink className="active" href="/serving-papers-atlas/#roadmap">文章</StaticPageLink> : null}
       </nav>
-      <span className="edition">{articles.length} 篇 · 2025—2026</span>
+      <span className="edition">{articles.length} 篇 · 2024—2026</span>
     </header>
   );
 }
