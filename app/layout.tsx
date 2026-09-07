@@ -1,10 +1,11 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-const siteUrl = 'https://serving-papers-atlas.gintherenderman.chatgpt.site';
+const siteUrl = 'https://gin-sin.github.io/serving-papers-atlas';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
+  icons: { icon: `${siteUrl}/favicon.svg` },
   title: 'Serving Papers · 前沿模型推理系统阅读地图',
   description: 'LMSYS 与 vLLM 精选文章的混合并行、P/D 分离和前沿模型 Serving 深度导读。',
   openGraph: {
