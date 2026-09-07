@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { BookOpenText } from 'lucide-react';
+import { articles } from '@/lib/articles';
 
 export function SiteHeader({ article = false }: { article?: boolean }) {
   return (
@@ -13,7 +14,7 @@ export function SiteHeader({ article = false }: { article?: boolean }) {
         <Link href="/#roadmap">阅读路线</Link>
         {article ? <Link className="active" href="/#roadmap">文章</Link> : null}
       </nav>
-      <span className="edition">15 篇 · 2025—2026</span>
+      <span className="edition">{articles.length} 篇 · 2025—2026</span>
     </header>
   );
 }

@@ -12,6 +12,7 @@ const mapColumns = [
 
 export default function Home() {
   const orderedArticles = [...articles].sort((a, b) => Number(a.no) - Number(b.no));
+  const questionCount = articles.reduce((total, article) => total + article.questions.length, 0);
   return (
     <main>
       <SiteHeader />
@@ -19,7 +20,7 @@ export default function Home() {
         <div className="hero-copy">
           <p className="eyebrow"><span />LMSYS × vLLM · CURATED FIELD NOTES</p>
           <h1>从模型结构，<br />推导 <em>Serving 拓扑。</em></h1>
-          <p className="hero-lede">15 篇前沿推理系统文章的章节化导读。沿着混合并行、P/D 分离与模型状态三条线，读懂每一个架构选择背后的瓶颈。</p>
+          <p className="hero-lede">{articles.length} 篇前沿推理系统文章的章节化导读。沿着混合并行、P/D 分离与模型状态三条线，读懂每一个架构选择背后的瓶颈。</p>
           <div className="hero-actions">
             <Link className="primary-action" href="#roadmap">开始阅读 <ArrowRight /></Link>
             <a href="#map">先看知识地图</a>
@@ -27,7 +28,7 @@ export default function Home() {
         </div>
         <aside className="field-card">
           <span>READING FIELD</span>
-          <dl><div><dt>15</dt><dd>核心文章</dd></div><div><dt>04</dt><dd>学习阶段</dd></div><div><dt>45+</dt><dd>深度问题</dd></div></dl>
+          <dl><div><dt>{articles.length}</dt><dd>核心文章</dd></div><div><dt>04</dt><dd>学习阶段</dd></div><div><dt>{questionCount}</dt><dd>深度问题</dd></div></dl>
           <p>重点覆盖 DeepSeek、Kimi K3、Qwen3.5、GLM-5.2，以及 vLLM / SGLang 的真实部署拓扑。</p>
         </aside>
       </section>

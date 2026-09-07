@@ -102,7 +102,7 @@ export const articles: Article[] = [
       { level: '机制', prompt: 'DCP 与传统 Attention TP 的切分对象有何不同？', hint: '比较 head 维度与 token-position 维度。', answer: '传统 TP 常按 query/head 或隐藏维度切计算；DCP 按历史 token position 切 KV，每个 rank 保存每个请求的一部分位置，从而在 MLA head 数不足时仍能扩展 KV 容量。' },
       { level: '推导', prompt: '为什么 DCP 解决 MLA KV 后，KDA state 会成为下一道 ceiling？', hint: '哪类状态随 token，哪类状态随 request？', answer: 'MLA KV 随 token 增长且可按位置分片；KDA recurrent state 是每请求固定状态，语义上由完整历史折叠而成，无法用同一位置切分方式线性扩展。上下文容量解除后，可驻留请求数受 KDA state 限制。' },
       { level: '设计', prompt: '如果 workload 从 8K prompt 变成 256K prompt，P:D 比例应如何变化？', hint: '分别考虑 Prefill 计算量、Decode KV 容量与 OSL。', answer: '通常需要增加 Prefill capacity，因为 Prefill FLOPs 随输入显著增长；同时长上下文增加 Decode KV 占用，可能还要增加 DCP/Decode 实例。最终比例取决于 OSL 和复用率，应通过固定 SLO 下的 Pareto sweep 决定。' },
-    ], related: ['pipeline-million-context', 'deepseek-96-h100'],
+    ], related: ['pipeline-million-context', 'deepseek-96-h100', 'decode-context-parallelism'],
   },
   {
     slug: 'vllm-wideep-h200',
@@ -234,11 +234,103 @@ export const articles: Article[] = [
       { level: '机制', prompt: '为什么减少 NIXL descriptor 数量可能在传输字节变化不大时仍提升性能？', hint: 'descriptor 也有创建、交换、提交和轮询成本。', answer: '每个 descriptor 会带来 metadata、队列提交和 completion tracking 开销。大量小 descriptors 会增加 CPU/control-path 与 NIC work request 压力，因此合并或精确过滤可降低固定成本。' },
       { level: '推导', prompt: 'GDN kernel 快 5×，为什么端到端 Prefill 可能只快十几个百分点？', hint: '使用 Amdahl 定律。', answer: '只有 GDN kernel 占用的那部分时间能获得加速；其他投影、MoE、通信、调度和数据移动保持不变。若被优化部分只占总路径的一小部分，总体上限自然有限。' },
       { level: '设计', prompt: '怎样验证 async scheduling 修复没有引入 silent corruption？', hint: '不能只跑吞吐 benchmark。', answer: '加入可控传输延迟/失败、请求取消、block reuse、P/D 重启和高并发随机化测试；对比 colocated 数值结果，记录 state version/ownership，并使用长时间 stress 与 sanitizer-style invariant checks。' },
-    ], related: ['hybrid-ssm-disagg', 'kimi-k3-vllm'],
+    ], related: ['hybrid-ssm-disagg', 'kimi-k3-vllm', 'decode-context-parallelism'],
+  },
+  {
+    slug: 'decode-context-parallelism',
+    no: '10',
+    stageNo: '03',
+    stage: '前沿架构',
+    source: 'vLLM',
+    date: '2026-08-07',
+    title:
+      'Efficient Decode Context Parallelism with vLLM for Long Context Workloads',
+    shortTitle: 'Decode Context Parallelism：让 KV 沿序列切分',
+    dek: '当 TP 已无法继续切分 MLA / GQA 的 KV cache，DCP 改沿 token position 分片，用轻量 Decode 通信换取更高的长上下文并发。',
+    url: 'https://vllm.ai/blog/2026-08-07-decode-context-parallelism',
+    readTime: '约 20 分钟',
+    difficulty: '高阶',
+    tags: ['DCP', 'Long Context', 'MLA', 'GQA', 'KV Cache'],
+    thesis:
+      'DCP 不是让单条长序列的 Attention 无通信，而是在 TP 的 KV-head 切分到达下限后，把原本重复的 KV 副本改成不同的序列分片，以小尺寸 Query 和 partial-output 归约换取近似按 DCP degree 缩小的单卡 KV 占用。',
+    why: '文章把 DCP 的适用边界、通信闭环与 MLA / GQA 的不同约束讲得很完整；同一组 8×B200 实验也直接展示了“省下 KV → 提高并发 → 抬高吞吐”的因果链。',
+    topology: '8×B200 · Kimi K2.6 NVFP4 · TP8 / DCP8 · 64K–1M context',
+    sections: [
+      {
+        title: 'TP 的 KV 切分为何触底',
+        summary: [
+          'GQA 只能先按 KV head 切分；当 TP 超过 KV-head 数后，额外 ranks 开始保存重复 head，而不是继续缩小单卡 KV。',
+          'MLA 把 K/V 压成所有 query heads 共享的一份 latent，相当于只有一个 KV head；纯 TP 因而会在每个 rank 上复制整份 latent KV。',
+        ],
+        annotation:
+          '这里要把参数权重和请求状态分开看：扩大 TP 仍能切权重与投影计算，但 KV 这项随上下文和并发增长的状态已经停止缩小。DCP 针对的正是这个 state-sharding ceiling。',
+        takeaway: '判断 TP 是否还有效，必须分别检查 weight shard 与 KV shard。',
+      },
+      {
+        title: 'DCP：按 token position 分片',
+        summary: [
+          'DCP 不再寻找更多 head，而是把同一请求的历史位置分给多张 GPU；例如 200K tokens 可由四个 ranks 各保存 50K。',
+          'Decode 时每个 rank 都参与这个请求，但只读取本地那一段 KV，并计算该位置区间对当前 query 的部分 Attention。',
+        ],
+        annotation:
+          '这与 DP Attention 按请求切分不同：DP worker 各自拥有不同请求的完整 KV；DCP 则把一个请求的 KV 横跨多个 ranks。前者扩大请求级独立性，后者解决单请求或长上下文 batch 的单卡状态上限。',
+        takeaway:
+          'DCP 的切分对象是 request 内的 context positions，而不是 requests。',
+      },
+      {
+        title: '一次 Decode 的通信闭环',
+        summary: [
+          '先在 DCP group 内 AllGather 当前 token 的 Query，让每个 KV 分片都能用完整 query 与本地历史做 Attention。',
+          '随后交换各 rank 的 partial output 与 LSE，用 online-softmax 权重合并不同序列片段，再 ReduceScatter 回每个 rank 所需的 head slice；MLA 还可复制较小的 Q projection 来省掉首次 AllGather。',
+        ],
+        annotation:
+          '局部 softmax 结果不能直接相加或平均，因为每个分片的归一化分母不同；LSE 提供了把局部最大值和分母恢复成全局 softmax 的数值稳定权重。DCP 实质上是用 decode 阶段的小 activation collective，换取大得多的持久 KV 不再复制。',
+        takeaway:
+          '通信虽没有消失，但被压缩到单 token Query 和 Attention 归约。',
+      },
+      {
+        title: 'MLA、GQA 的上限与收益边界',
+        summary: [
+          'MLA 的有效 KV-head 数为 1，因此 DCP 可扩到 TP degree（且 TP 必须能被 DCP 整除）；GQA 只能利用 TP / KV-head 数产生的重复副本，DCP 上限由这部分冗余决定。',
+          '8×B200 上的 Kimi K2.6 实验中，纯 TP 在 concurrency 64 时耗尽 KV，并停在约 1,863 tok/s/GPU；DCP 在 concurrency 512 时仍为 82% KV 使用率，并达到约 6,091 tok/s/GPU。',
+        ],
+        annotation:
+          '吞吐提升主要来自释放显存后能容纳更大 batch，而不是 DCP 必然缩短一次 decode step。长上下文、KV 已复制、高并发且互联带宽高时收益最大；短上下文或低并发时，新增 collective 可能得不偿失。',
+        takeaway:
+          '用 throughput–interactivity Pareto frontier 选择 DCP，而不是只看峰值 TPS。',
+      },
+    ],
+    questions: [
+      {
+        level: '机制',
+        prompt:
+          'DCP 已经按序列分了 KV，为什么还需要 Query AllGather 和 output/LSE 归约？',
+        hint: '分别问：每个 KV 分片需要什么 Query，以及局部 softmax 能否直接相加。',
+        answer:
+          'TP 之后每个 rank 起初只持有 query/head 的一部分，但每个序列分片都要用完整 Query 对本地 Keys 打分，所以先 AllGather Q。各 rank 得到的 Attention output 又只覆盖局部 positions，且 softmax 分母不同，必须交换 output 与 LSE 做全局重加权，再 ReduceScatter 回目标 head slice。',
+      },
+      {
+        level: '推导',
+        prompt:
+          'DCP8 把单卡 KV 理论上缩到 1/8，为什么吞吐通常不会自动提升 8 倍？',
+        hint: '省下的是容量；系统还受哪些计算、通信和 SLO 约束？',
+        answer:
+          'DCP 直接改善的是 KV 容量，从而允许更高 concurrency 和 batch。吞吐仍受 Attention/FFN 计算、模型权重带宽、DCP collectives、调度开销、请求长度分布和 TPOT SLO 限制；只有新增 batch 能被计算高效消费且通信未暴露时，容量收益才会转化为 TPS。',
+      },
+      {
+        level: '设计',
+        prompt:
+          '面对 200K context 的 MLA 服务，如何在 DP Attention、DCP 与 P/D 分离之间做选择？',
+        hint: '区分请求级 ownership、单请求 KV ceiling 与 Prefill/Decode 的阶段差异。',
+        answer:
+          '若单个 DP worker 的 KV 足以容纳目标 batch，优先用请求级 DP 获得独立调度和少通信；若 MLA KV 在 TP ranks 上复制并限制并发，则在每个 Decode worker group 内加入 DCP。若长 Prefill 的计算拓扑与 Decode 的 DCP/容量拓扑明显不同，再用 P/D 分离让 P 侧选 PP/TP、D 侧选 TP×DCP，并把 KV layout 转换与传输计入端到端 SLO。',
+      },
+    ],
+    related: ['kimi-k3-sglang', 'pipeline-million-context', 'qwen35-disagg'],
   },
   {
     slug: 'deepseek-v4-pro',
-    no: '10', stageNo: '03', stage: '前沿架构', source: 'LMSYS', date: '2026-08-19',
+    no: '11', stageNo: '03', stage: '前沿架构', source: 'LMSYS', date: '2026-08-19',
     title: 'Pushing the Limits of Serving DeepSeek-V4-Pro',
     shortTitle: 'DeepSeek-V4-Pro：一个模型，多套 Serving Profile',
     dek: '在 H20 约束下分别优化长 Prefill、低延迟 Decode 与高吞吐 Decode，而不是寻找万能配置。',
@@ -260,7 +352,7 @@ export const articles: Article[] = [
   },
   {
     slug: 'glm52-production',
-    no: '11', stageNo: '04', stage: '走向生产', source: 'vLLM', date: '2026-07-23',
+    no: '12', stageNo: '04', stage: '走向生产', source: 'vLLM', date: '2026-07-23',
     title: 'From Day 0 to Production SLAs: Serving GLM-5.2 on 24 NVIDIA B300 GPUs with vLLM',
     shortTitle: 'GLM-5.2：从 Day-0 到生产 SLA',
     dek: '以 TTFT≤2.5s、TPOT≤20ms 为硬约束，解释为何最终上线拓扑不是原始吞吐最高的那一个。',
@@ -282,7 +374,7 @@ export const articles: Article[] = [
   },
   {
     slug: 'deepseek-h20-practices',
-    no: '12', stageNo: '04', stage: '走向生产', source: 'LMSYS', date: '2025-09-26',
+    no: '13', stageNo: '04', stage: '走向生产', source: 'LMSYS', date: '2025-09-26',
     title: 'Together with SGLang: Best Practices for Serving DeepSeek-R1 on H20-96G',
     shortTitle: 'DeepSeek on H20：EP Degree 与 SLA 分层',
     dek: '用真实 batch、跨节点通信比例和三档 SLA，解释为什么 EP16 可能胜过 EP32。',
@@ -304,7 +396,7 @@ export const articles: Article[] = [
   },
   {
     slug: 'blackwell-wideep',
-    no: '13', stageNo: '04', stage: '走向生产', source: 'vLLM', date: '2026-02-03',
+    no: '14', stageNo: '04', stage: '走向生产', source: 'vLLM', date: '2026-02-03',
     title: 'Driving vLLM WideEP and Large-Scale Serving Toward Maturity on Blackwell (Part I)',
     shortTitle: 'Blackwell Wide-EP：低精度与 Prefill Scale-down',
     dek: '从 H200 迁移到 GB200 后，重新优化 FP4 dispatch、kernel fusion、chunking 与 4P1D 资源配比。',
@@ -326,7 +418,7 @@ export const articles: Article[] = [
   },
   {
     slug: 'elastic-ep-vllm',
-    no: '14', stageNo: '04', stage: '走向生产', source: 'vLLM', date: '2026-05-14',
+    no: '15', stageNo: '04', stage: '走向生产', source: 'vLLM', date: '2026-05-14',
     title: 'Elastic Expert Parallelism in vLLM',
     shortTitle: 'Elastic EP：运行中改变并行拓扑',
     dek: '不停服增减 DP workers、重建 EP group、迁移专家，并与 EPLB 和 NIXL EP 协调。',
@@ -348,7 +440,7 @@ export const articles: Article[] = [
   },
   {
     slug: 'pd-multiplexing',
-    no: '15', stageNo: '04', stage: '走向生产', source: 'LMSYS', date: '2025-09-28',
+    no: '16', stageNo: '04', stage: '走向生产', source: 'LMSYS', date: '2025-09-28',
     title: 'PD-Multiplexing: Unlocking High-Goodput LLM Serving with GreenContext',
     shortTitle: 'PD-Multiplexing：不搬 KV 的另一条路',
     dek: '用 GPU 内空间复用隔离 Prefill 与 Decode，在共享 KV pool 的同时动态分配 SM。',
