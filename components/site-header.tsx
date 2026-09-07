@@ -1,18 +1,18 @@
-import Link from 'next/link';
 import { BookOpenText } from 'lucide-react';
+import { StaticPageLink } from '@/components/static-page-link';
 import { articles } from '@/lib/articles';
 
 export function SiteHeader({ article = false }: { article?: boolean }) {
   return (
     <header className="site-header">
-      <Link className="wordmark" href="/" aria-label="回到首页">
+      <StaticPageLink className="wordmark" href="/serving-papers-atlas/" aria-label="回到首页">
         <span className="wordmark-icon"><BookOpenText aria-hidden="true" /></span>
         <span><strong>Serving Papers</strong><small>MODEL → TOPOLOGY → SLO</small></span>
-      </Link>
+      </StaticPageLink>
       <nav aria-label="主导航">
-        <Link href="/#map">知识地图</Link>
-        <Link href="/#roadmap">阅读路线</Link>
-        {article ? <Link className="active" href="/#roadmap">文章</Link> : null}
+        <StaticPageLink href="/serving-papers-atlas/#map">知识地图</StaticPageLink>
+        <StaticPageLink href="/serving-papers-atlas/#roadmap">阅读路线</StaticPageLink>
+        {article ? <StaticPageLink className="active" href="/serving-papers-atlas/#roadmap">文章</StaticPageLink> : null}
       </nav>
       <span className="edition">{articles.length} 篇 · 2025—2026</span>
     </header>

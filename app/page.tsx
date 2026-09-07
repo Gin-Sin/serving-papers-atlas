@@ -1,6 +1,6 @@
-import Link from 'next/link';
 import { ArrowRight, BookOpen, Network, Orbit, Route, Waves } from 'lucide-react';
 import { SiteHeader } from '@/components/site-header';
+import { StaticPageLink } from '@/components/static-page-link';
 import { articles, stages } from '@/lib/articles';
 
 const mapColumns = [
@@ -22,7 +22,7 @@ export default function Home() {
           <h1>从模型结构，<br />推导 <em>Serving 拓扑。</em></h1>
           <p className="hero-lede">{articles.length} 篇前沿推理系统文章的章节化导读。沿着混合并行、P/D 分离与模型状态三条线，读懂每一个架构选择背后的瓶颈。</p>
           <div className="hero-actions">
-            <Link className="primary-action" href="#roadmap">开始阅读 <ArrowRight /></Link>
+            <a className="primary-action" href="#roadmap">开始阅读 <ArrowRight /></a>
             <a href="#map">先看知识地图</a>
           </div>
         </div>
@@ -51,9 +51,9 @@ export default function Home() {
             const stageArticles = orderedArticles.filter((article) => article.stageNo === stage.no);
             return <section className="stage" key={stage.no}>
               <header><span>{stage.no}</span><div><h3>{stage.title}</h3><p>{stage.caption}</p></div><small>{String(stageArticles.length).padStart(2, '0')} PAPERS</small></header>
-              {stageArticles.length ? <div className="article-list">{stageArticles.map((article) => <Link className="article-row" href={`/articles/${article.slug}`} key={article.slug}>
+              {stageArticles.length ? <div className="article-list">{stageArticles.map((article) => <StaticPageLink className="article-row" href={`/serving-papers-atlas/articles/${article.slug}/`} key={article.slug}>
                 <span className="paper-no">{article.no}</span><div className="paper-title"><div><b>{article.source}</b><span>{article.date}</span><span>{article.difficulty}</span></div><h4>{article.shortTitle}</h4><p>{article.dek}</p></div><div className="paper-tags">{article.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div><span className="read-link"><BookOpen />阅读</span>
-              </Link>)}</div> : <div className="stage-coming">更多精选文章正在写入这一阶段。</div>}
+              </StaticPageLink>)}</div> : <div className="stage-coming">更多精选文章正在写入这一阶段。</div>}
             </section>;
           })}
         </div>
